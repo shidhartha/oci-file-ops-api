@@ -202,8 +202,11 @@ public class FileOperationResource {
                     .bucketName(bucketName)
                     .objectName(fileName)
                     .build();
-
+            System.out.println("File Download starting...");
+            long starttime = System.currentTimeMillis();
             GetObjectResponse response = objectStorageClient.getObject(request);
+            long timeTaken = System.currentTimeMillis() - starttime;
+            System.out.println("downloadFromObjectStorage: timeTaken (milli):"+timeTaken);
             System.out.println("downloadFromObjectStorage:File md5:"+response.getContentMd5());
             return response.getInputStream();
         } catch (Exception e) {
