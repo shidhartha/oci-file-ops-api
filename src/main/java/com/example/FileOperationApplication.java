@@ -1,6 +1,7 @@
 package com.example;
 
-import com.example.resources.FileOperationResource;
+import com.example.resources.FileOperationResourceOc1;
+import com.example.resources.FileOperationResourceOc10;
 import io.dropwizard.Application;
 import io.dropwizard.Configuration;
 import io.dropwizard.setup.Bootstrap;
@@ -25,7 +26,11 @@ public class FileOperationApplication extends Application<Configuration> {
         // Register the MultiPartFeature to enable multipart form data support
         environment.jersey().register(MultiPartFeature.class);
         // Register the resource class with Jersey
-        environment.jersey().register(new FileOperationResource());
+        environment.jersey().register(new FileOperationResourceOc1());
+        environment.jersey().register(new FileOperationResourceOc10());
+
+
+        environment.lifecycle().manage(new FileOperationManager());
     }
 }
 

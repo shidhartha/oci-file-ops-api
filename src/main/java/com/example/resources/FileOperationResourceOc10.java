@@ -1,33 +1,31 @@
 package com.example.resources;
 
+import com.example.utils.ObjectStorageUtils;
 import com.oracle.bmc.auth.AuthenticationDetailsProvider;
 import com.oracle.bmc.auth.ConfigFileAuthenticationDetailsProvider;
-import com.oracle.bmc.objectstorage.ObjectStorage;
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
-import com.oracle.bmc.objectstorage.requests.GetObjectRequest;
-import com.oracle.bmc.objectstorage.requests.PutObjectRequest;
-import com.oracle.bmc.objectstorage.responses.GetObjectResponse;
-import com.oracle.bmc.objectstorage.responses.PutObjectResponse;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import java.io.*;
+import java.io.File;
+import java.io.InputStream;
 
-@Path("/osOps")
+@Path("/oc10")
 @Produces(MediaType.APPLICATION_JSON)
-public class FileOperationResource {
+public class FileOperationResourceOc10 {
+    private ObjectStorageUtils objectStorageUtils;
 
-    private final ObjectStorage objectStorageClient;
-    private final String namespaceName = "idvwg0eaivf3"; // Replace with your OCI namespace
-
-    public FileOperationResource() {
+    public FileOperationResourceOc10() {
         try {
             AuthenticationDetailsProvider provider =
-                    new ConfigFileAuthenticationDetailsProvider("~/.oci/config", "oc1-ashburn-test-user-hpt");
-            this.objectStorageClient = new ObjectStorageClient(provider);
+                    new ConfigFileAuthenticationDetailsProvider("~/.oci/config", "oc10-ap-dcc-canberra-1-test-user-hpt");
+            ObjectStorageClient objectStorageClient = new ObjectStorageClient(provider);
+            // Replace with your OCI namespace
+            String namespaceName = "axrkmdznll4i";
+            this.objectStorageUtils = new ObjectStorageUtils(namespaceName, objectStorageClient);
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize OCI Object Storage client: " + e.getMessage(), e);
         }
@@ -51,7 +49,7 @@ public class FileOperationResource {
             }
 
             String bucketName = "test-src-bucket"; // Replace with your default source bucket if needed
-            boolean uploadSuccessful = uploadToObjectStorage(uploadedInputStream, bucketName, fileName);
+            boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(uploadedInputStream, bucketName, fileName);
 
             if (uploadSuccessful) {
                 return Response.status(Response.Status.OK)
@@ -88,7 +86,7 @@ public class FileOperationResource {
 
             String destinationFileName = (destFile != null && !destFile.isEmpty()) ? destFile : sourceFile;
 
-            InputStream fileStream = downloadFromObjectStorage(sourceBucket, sourceFile);
+            InputStream fileStream = this.objectStorageUtils.downloadFromObjectStorage(sourceBucket, sourceFile);
             if (fileStream == null) {
                 return Response.status(Response.Status.NOT_FOUND)
                         .entity("File " + sourceFile + " not found in source bucket " + sourceBucket)
@@ -96,7 +94,7 @@ public class FileOperationResource {
             }
 
 
-            boolean uploadSuccessful = uploadToObjectStorage(fileStream, destBucket, destinationFileName);
+            boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(fileStream, destBucket, destinationFileName);
 
 
             if (uploadSuccessful) {
@@ -132,7 +130,7 @@ public class FileOperationResource {
             }
 
             // Download the file from the specified bucket
-            InputStream fileStream = downloadFromObjectStorage(bucketName, fileName);
+            InputStream fileStream = this.objectStorageUtils.downloadFromObjectStorage(bucketName, fileName);
             if (fileStream == null) {
                 return Response.status(Response.Status.NOT_FOUND)
                         .entity("File " + fileName + " not found in bucket " + bucketName)
@@ -150,7 +148,7 @@ public class FileOperationResource {
             }
 
             // Write the file to local disk
-            boolean saveSuccessful = saveToLocalDisk(fileStream, fullPath);
+            boolean saveSuccessful = this.objectStorageUtils.saveToLocalDisk(fileStream, fullPath);
 
             if (saveSuccessful) {
                 return Response.status(Response.Status.OK)
@@ -165,76 +163,6 @@ public class FileOperationResource {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("Error downloading file: " + e.getMessage())
                     .build();
-        }
-    }
-
-    // Helper method to upload a file to a specified bucket
-    private boolean uploadToObjectStorage(InputStream inputStream, String bucketName, String fileName) {
-        try {
-            PutObjectRequest request = PutObjectRequest.builder()
-                    .namespaceName(namespaceName)
-                    .bucketName(bucketName)
-                    .objectName(fileName)
-                    .putObjectBody(inputStream)
-                    .build();
-
-            System.out.println("File upload starting...");
-            long starttime = System.currentTimeMillis();
-
-            PutObjectResponse response = objectStorageClient.putObject(request);
-            boolean uploadSuccessful = response.getOpcContentMd5() != null;
-            System.out.println("uploadToObjectStorage: file md5:"+response.getOpcContentMd5());
-
-            long timeTaken = System.currentTimeMillis() - starttime;
-            System.out.println("File upload completed . status: "+uploadSuccessful+" timeTaken(milli):"+timeTaken);
-            return uploadSuccessful;
-        } catch (Exception e) {
-            System.err.println("Error uploading to OCI Object Storage: " + e.getMessage());
-            return false;
-        }
-    }
-
-    // Helper method to download a file from a specified bucket
-    private InputStream downloadFromObjectStorage(String bucketName, String fileName) {
-        try {
-            GetObjectRequest request = GetObjectRequest.builder()
-                    .namespaceName(namespaceName)
-                    .bucketName(bucketName)
-                    .objectName(fileName)
-                    .build();
-            System.out.println("File Download starting...");
-            long starttime = System.currentTimeMillis();
-            GetObjectResponse response = objectStorageClient.getObject(request);
-            long timeTaken = System.currentTimeMillis() - starttime;
-            System.out.println("downloadFromObjectStorage: timeTaken (milli):"+timeTaken);
-            System.out.println("downloadFromObjectStorage:File md5:"+response.getContentMd5());
-            return response.getInputStream();
-        } catch (Exception e) {
-            System.err.println("Error downloading from OCI Object Storage: " + e.getMessage());
-            return null;
-        }
-    }
-
-    // Helper method to save a file to local disk
-    private boolean saveToLocalDisk(InputStream inputStream, String filePath) {
-        try (OutputStream outputStream = new FileOutputStream(filePath)) {
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-            }
-            return true;
-        } catch (IOException e) {
-            System.err.println("Error saving file to local disk: " + e.getMessage());
-            return false;
-        } finally {
-            try {
-                if (inputStream != null) {
-                    inputStream.close();
-                }
-            } catch (IOException e) {
-                System.err.println("Error closing input stream: " + e.getMessage());
-            }
         }
     }
 }
