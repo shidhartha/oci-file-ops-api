@@ -15,17 +15,15 @@ import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 
 @Path("/osOps")
 @Produces(MediaType.APPLICATION_JSON)
-public class FileUploadResource {
+public class FileOperationResource {
 
     private final ObjectStorage objectStorageClient;
     private final String namespaceName = "idvwg0eaivf3"; // Replace with your OCI namespace
 
-    public FileUploadResource() {
+    public FileOperationResource() {
         try {
             AuthenticationDetailsProvider provider =
                     new ConfigFileAuthenticationDetailsProvider("~/.oci/config", "oc1-ashburn-test-user-hpt");
@@ -97,7 +95,9 @@ public class FileUploadResource {
                         .build();
             }
 
+
             boolean uploadSuccessful = uploadToObjectStorage(fileStream, destBucket, destinationFileName);
+
 
             if (uploadSuccessful) {
                 return Response.status(Response.Status.OK)
@@ -178,8 +178,16 @@ public class FileUploadResource {
                     .putObjectBody(inputStream)
                     .build();
 
+            System.out.println("File upload starting...");
+            long starttime = System.currentTimeMillis();
+
             PutObjectResponse response = objectStorageClient.putObject(request);
-            return response.getOpcContentMd5() != null;
+            boolean uploadSuccessful = response.getOpcContentMd5() != null;
+            System.out.println("uploadToObjectStorage: file md5:"+response.getOpcContentMd5());
+
+            long timeTaken = System.currentTimeMillis() - starttime;
+            System.out.println("File upload completed . status: "+uploadSuccessful+" timeTaken(milli):"+timeTaken);
+            return uploadSuccessful;
         } catch (Exception e) {
             System.err.println("Error uploading to OCI Object Storage: " + e.getMessage());
             return false;
@@ -196,6 +204,7 @@ public class FileUploadResource {
                     .build();
 
             GetObjectResponse response = objectStorageClient.getObject(request);
+            System.out.println("downloadFromObjectStorage:File md5:"+response.getContentMd5());
             return response.getInputStream();
         } catch (Exception e) {
             System.err.println("Error downloading from OCI Object Storage: " + e.getMessage());

@@ -71,7 +71,7 @@
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.1.0</version>
         <configuration>
-          <mainClass>com.example.FileUploadApplication</mainClass>
+          <mainClass>com.example.FileOperationApplication</mainClass>
           <arguments>
             <argument>server</argument>
             <!-- Optionally specify a config file if you have one -->

@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.resources.FileUploadResource;
+import com.example.resources.FileOperationResource;
 import io.dropwizard.Application;
 import io.dropwizard.Configuration;
 import io.dropwizard.setup.Bootstrap;
@@ -8,10 +8,10 @@ import io.dropwizard.setup.Environment;
 import org.glassfish.jersey.media.multipart.MultiPartFeature;
 
 // Main Dropwizard Application class
-public class FileUploadApplication extends Application<Configuration> {
+public class FileOperationApplication extends Application<Configuration> {
 
     public static void main(String[] args) throws Exception {
-        new FileUploadApplication().run(args);
+        new FileOperationApplication().run(args);
     }
 
     @Override
@@ -25,7 +25,7 @@ public class FileUploadApplication extends Application<Configuration> {
         // Register the MultiPartFeature to enable multipart form data support
         environment.jersey().register(MultiPartFeature.class);
         // Register the resource class with Jersey
-        environment.jersey().register(new FileUploadResource());
+        environment.jersey().register(new FileOperationResource());
     }
 }
 
