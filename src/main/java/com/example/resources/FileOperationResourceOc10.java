@@ -10,16 +10,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.ws.rs.*;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.File;
 import java.io.InputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Path("/oc10")
 @Produces(MediaType.APPLICATION_JSON)
 public class FileOperationResourceOc10 {
     private static final Logger LOGGER = LoggerFactory.getLogger(FileOperationResourceOc10.class);
     private ObjectStorageUtils objectStorageUtils;
+
+    // ExecutorService for async processing
+    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
+
 
     public FileOperationResourceOc10() {
         try {
@@ -121,46 +129,50 @@ public class FileOperationResourceOc10 {
     @POST
     @Path("/uploadFile")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
-    public Response uploadFileToOCI(
+    public void uploadFileToOCI(
             @FormDataParam("file") InputStream fileInputStream,
             @QueryParam("bucketName") String bucketName,
-            @QueryParam("objectName") String objectName) {
-        try {
-            // Validate input parameters
-            if (fileInputStream == null) {
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("File input stream is required.")
-                        .build();
-            }
-            if (bucketName == null || bucketName.isEmpty()) {
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("Bucket name is required.")
-                        .build();
-            }
+            @QueryParam("objectName") String objectName,
+            @Suspended AsyncResponse asyncResponse) {
+        executorService.submit(() -> {
+            try {
+                // Validate input parameters
+                if (fileInputStream == null) {
+                    asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                            .entity("File input stream is required.")
+                            .build());
+                }
+                if (bucketName == null || bucketName.isEmpty()) {
+                    asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                            .entity("Bucket name is required.")
+                            .build());
+                }
 
-            if (objectName == null || objectName.isEmpty()) {
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("File name or object name is required.")
-                        .build();
-            }
+                if (objectName == null || objectName.isEmpty()) {
+                    asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                            .entity("File name or object name is required.")
+                            .build());
+                }
+                String newObjectName = objectName+"_"+new java.util.Date().getTime();
 
-            // Upload the file to OCI Object Storage
-            boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(fileInputStream, bucketName, objectName, null);
+                // Upload the file to OCI Object Storage
+                boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(fileInputStream, bucketName, newObjectName, null);
 
-            if (uploadSuccessful) {
-                return Response.status(Response.Status.OK)
-                        .entity("File " + objectName + " uploaded successfully to bucket " + bucketName + " in OCI Object Storage.")
-                        .build();
-            } else {
-                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                        .entity("Failed to upload file to OCI Object Storage.")
-                        .build();
+                if (uploadSuccessful) {
+                    asyncResponse.resume(Response.status(Response.Status.OK)
+                            .entity("File " + newObjectName + " uploaded successfully to bucket " + bucketName + " in OCI Object Storage.")
+                            .build());
+                } else {
+                    asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity("Failed to upload file to OCI Object Storage.")
+                            .build());
+                }
+            } catch (Exception e) {
+                asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity("Error uploading file: " + e.getMessage())
+                        .build());
             }
-        } catch (Exception e) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("Error uploading file: " + e.getMessage())
-                    .build();
-        }
+        });
     }
 
 

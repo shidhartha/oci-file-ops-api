@@ -1,52 +1,15 @@
-#server:
-#  applicationConnectors:
-#    - type: http
-#      port: 8080
-#      # Increase the number of acceptor threads for handling incoming connections
-#      acceptorThreads: 4
-#      # Increase the number of selector threads for I/O operations
-#      selectorThreads: 8
-#      # Maximum number of threads in the thread pool for handling requests
-##      maxThreads: 256
-##      # Minimum number of threads to keep alive
-##      minThreads: 32
-#      # Timeout for idle threads (in milliseconds) before they are terminated
-#      idleTimeout: 30000
-#      # Maximum number of queued requests before rejecting new ones
-#      maxQueuedRequests: 1024
-#      # Enable reuse of TCP ports to reduce port exhaustion
-#      reuseAddress: true
-#      # Buffer size for request input (important for file uploads)
-#      requestHeaderSize: 8192
-#      requestBufferSize: 16384
-#      # Buffer size for response output (important for file downloads)
-#      responseHeaderSize: 8192
-#      responseBufferSize: 32768
-#      # Enable TCP no-delay for faster response times (reduces latency)
-#      useDirectBuffers: true
-#  adminConnectors:
-#    - type: http
-#      port: 8081
-#      # Similar optimizations can be applied for admin connector if needed
-#      acceptorThreads: 2
-#      selectorThreads: 4
-#      maxThreads: 64
-#      minThreads: 8
-#
-#logging:
-#  level: INFO
-#  loggers:
-#    com.example: DEBUG
-#  appenders:
-#    - type: console
-#      threshold: ALL
-#      timeZone: UTC
-#      target: stdout
-#      logFormat: "%-5level [%date] [%thread] %logger{36} - %msg %n"
-#    - type: file
-#      threshold: INFO
-#      logFormat: "%-5level [%date] [%thread] %logger{36} - %msg %n"
-#      currentLogFilename: ./logs/application.log
-#      archivedLogFilenamePattern: ./logs/application-%d.log.gz
-#      archivedFileCount: 5
-#      timeZone: UTC
+server:
+  applicationConnectors:
+    - type: http
+      port: 8080
+      # Increase the number of acceptor threads for handling incoming connections
+      acceptorThreads: 4
+      # Increase the number of selector threads for I/O operations
+      selectorThreads: 8
+  adminConnectors:
+    - type: http
+      port: 8081
+      acceptorThreads: 2
+      selectorThreads: 4
+logging:
+  level: INFO

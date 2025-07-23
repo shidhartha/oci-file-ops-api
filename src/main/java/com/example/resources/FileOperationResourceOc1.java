@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory;
 
 import javax.ws.rs.*;
 import javax.ws.rs.client.*;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.*;
@@ -29,7 +31,7 @@ public class FileOperationResourceOc1 {
     private final ObjectStorageUtils objectStorageUtils;
 
     // ExecutorService for async processing
-    private final ExecutorService executorService = Executors.newFixedThreadPool(50);
+    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
 
 
     public FileOperationResourceOc1() {
@@ -131,69 +133,74 @@ public class FileOperationResourceOc1 {
     @POST
     @Path("/copyBucketFileToOc10")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response copyBucketFileToOc10(@QueryParam("sourceBucket") String sourceBucket,
+    public void copyBucketFileToOc10(@QueryParam("sourceBucket") String sourceBucket,
                              @QueryParam("sourceFile") String sourceFile,
                              @QueryParam("destBucket") String destBucket,
-                             @QueryParam("destFile") String destFile) {
-        try {
-            if (sourceBucket == null || sourceBucket.isEmpty() ||
-                    sourceFile == null || sourceFile.isEmpty() ||
-                    destBucket == null || destBucket.isEmpty()) {
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("Source bucket, source file, and destination bucket are required.")
-                        .build();
-            }
+                             @QueryParam("destFile") String destFile,
+                             @Suspended final AsyncResponse asyncResponse) {
+        executorService.submit(() -> {
+            try {
+                if (sourceBucket == null || sourceBucket.isEmpty() ||
+                        sourceFile == null || sourceFile.isEmpty() ||
+                        destBucket == null || destBucket.isEmpty()) {
 
-            String destinationFileName = (destFile != null && !destFile.isEmpty()) ? destFile : sourceFile;
+                    asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                            .entity("Source bucket, source file, and destination bucket are required.")
+                            .build());
+                }
 
-            FileStreamMetadata metadata = this.objectStorageUtils.downloadFromObjectStorage(sourceBucket, sourceFile);
-            if (metadata.getInputStream() == null) {
-                return Response.status(Response.Status.NOT_FOUND)
-                        .entity("File " + sourceFile + " not found in source bucket " + sourceBucket)
-                        .build();
-            }
+                String destinationFileName = (destFile != null && !destFile.isEmpty()) ? destFile : sourceFile;
 
-            // Set up Jersey Client with MultiPartFeature
-            ClientConfig config = new ClientConfig();
-            config.register(MultiPartFeature.class);
-            Client client = ClientBuilder.newClient(config);
+                FileStreamMetadata metadata = this.objectStorageUtils.downloadFromObjectStorage(sourceBucket, sourceFile);
+                if (metadata.getInputStream() == null) {
+                    asyncResponse.resume(Response.status(Response.Status.NOT_FOUND)
+                            .entity("File " + sourceFile + " not found in source bucket " + sourceBucket)
+                            .build());
+                }
 
-            // Target the existing upload endpoint
-            WebTarget target = client.target("http://localhost:8080/oc10/uploadFile")
-                    .queryParam("bucketName", destBucket)
-                    .queryParam("objectName", destinationFileName);
+                // Set up Jersey Client with MultiPartFeature
+                ClientConfig config = new ClientConfig();
+                config.register(MultiPartFeature.class);
+                Client client = ClientBuilder.newClient(config);
 
-            // Create multipart form data
-            try (FormDataMultiPart formDataMultiPart = new FormDataMultiPart()) {
-                StreamDataBodyPart filePart = new StreamDataBodyPart("file", metadata.getInputStream(), sourceFile);
-                formDataMultiPart.bodyPart(filePart);
+                // Target the existing upload endpoint
+                WebTarget target = client.target("http://localhost:8080/oc10/uploadFile")
+                        .queryParam("bucketName", destBucket)
+                        .queryParam("objectName", destinationFileName);
 
-                // Send the request to the existing endpoint
-                LOGGER.info("Calling OC10 Api to upload the file");
-                try (Response response = target.request(MediaType.APPLICATION_JSON)
-                        .post(Entity.entity(formDataMultiPart, MediaType.MULTIPART_FORM_DATA))) {
+                // Create multipart form data
+                try (FormDataMultiPart formDataMultiPart = new FormDataMultiPart()) {
+                    StreamDataBodyPart filePart = new StreamDataBodyPart("file", metadata.getInputStream(), sourceFile);
+                    formDataMultiPart.bodyPart(filePart);
 
-                    // Return the response based on the API call result
-                    if (response.getStatus() == 200) {
-                        return Response.status(Response.Status.OK)
-                                .entity("File " + sourceFile + " uploaded successfully via OC10 API call to bucket " + destBucket + ".")
-                                .build();
-                    } else {
-                        return Response.status(response.getStatus())
-                                .entity("Failed to upload via OC10 API call: " + response.readEntity(String.class))
-                                .build();
+                    // Send the request to the existing endpoint
+                    LOGGER.info("Calling OC10 Api to upload the file");
+                    try (Response response = target.request(MediaType.APPLICATION_JSON)
+                            .post(Entity.entity(formDataMultiPart, MediaType.MULTIPART_FORM_DATA))) {
+
+                        // Return the response based on the API call result
+                        if (response.getStatus() == 200) {
+                            asyncResponse.resume(Response.status(Response.Status.OK)
+                                    .entity("File " + sourceFile + " uploaded successfully via OC10 API call to bucket " + destBucket + ".")
+                                    .build());
+                        } else {
+                            asyncResponse.resume(Response.status(response.getStatus())
+                                    .entity("Failed to upload via OC10 API call: " + response.readEntity(String.class))
+                                    .build());
+                        }
                     }
+                } catch (Exception e) {
+                    asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity("Error uploading file via OC10 API call: " + e.getMessage())
+                            .build());
                 }
             } catch (Exception e) {
-                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                        .entity("Error uploading file via OC10 API call: " + e.getMessage())
-                        .build();
+                asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity("Error uploading file via OC10 API call:(external) " + e.getMessage())
+                        .build());
             }
-        } catch (Exception e) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("Error uploading file via OC10 API call (outer block): " + e.getMessage())
-                    .build();
-        }
+        });
+
     }
 
     // New endpoint for downloading a file to local disk
