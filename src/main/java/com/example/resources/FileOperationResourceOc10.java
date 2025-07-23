@@ -6,6 +6,8 @@ import com.oracle.bmc.auth.ConfigFileAuthenticationDetailsProvider;
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
@@ -16,6 +18,7 @@ import java.io.InputStream;
 @Path("/oc10")
 @Produces(MediaType.APPLICATION_JSON)
 public class FileOperationResourceOc10 {
+    private static final Logger LOGGER = LoggerFactory.getLogger(FileOperationResourceOc10.class);
     private ObjectStorageUtils objectStorageUtils;
 
     public FileOperationResourceOc10() {
@@ -49,7 +52,7 @@ public class FileOperationResourceOc10 {
             }
 
             String bucketName = "test-src-bucket"; // Replace with your default source bucket if needed
-            boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(uploadedInputStream, bucketName, fileName);
+            boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(uploadedInputStream, bucketName, fileName, null);
 
             if (uploadSuccessful) {
                 return Response.status(Response.Status.OK)
@@ -86,15 +89,15 @@ public class FileOperationResourceOc10 {
 
             String destinationFileName = (destFile != null && !destFile.isEmpty()) ? destFile : sourceFile;
 
-            InputStream fileStream = this.objectStorageUtils.downloadFromObjectStorage(sourceBucket, sourceFile);
-            if (fileStream == null) {
+            FileStreamMetadata metadata = this.objectStorageUtils.downloadFromObjectStorage(sourceBucket, sourceFile);
+            if (metadata.getInputStream() == null) {
                 return Response.status(Response.Status.NOT_FOUND)
                         .entity("File " + sourceFile + " not found in source bucket " + sourceBucket)
                         .build();
             }
 
 
-            boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(fileStream, destBucket, destinationFileName);
+            boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(metadata.getInputStream(), destBucket, destinationFileName, metadata.getMd5Hash());
 
 
             if (uploadSuccessful) {
@@ -114,7 +117,54 @@ public class FileOperationResourceOc10 {
         }
     }
 
-    // New endpoint for downloading a file to local disk
+    // POST API to upload a file to OCI Object Storage
+    @POST
+    @Path("/uploadFile")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public Response uploadFileToOCI(
+            @FormDataParam("file") InputStream fileInputStream,
+            @QueryParam("bucketName") String bucketName,
+            @QueryParam("objectName") String objectName) {
+        try {
+            // Validate input parameters
+            if (fileInputStream == null) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("File input stream is required.")
+                        .build();
+            }
+            if (bucketName == null || bucketName.isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("Bucket name is required.")
+                        .build();
+            }
+
+            if (objectName == null || objectName.isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("File name or object name is required.")
+                        .build();
+            }
+
+            // Upload the file to OCI Object Storage
+            boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(fileInputStream, bucketName, objectName, null);
+
+            if (uploadSuccessful) {
+                return Response.status(Response.Status.OK)
+                        .entity("File " + objectName + " uploaded successfully to bucket " + bucketName + " in OCI Object Storage.")
+                        .build();
+            } else {
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity("Failed to upload file to OCI Object Storage.")
+                        .build();
+            }
+        } catch (Exception e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("Error uploading file: " + e.getMessage())
+                    .build();
+        }
+    }
+
+
+            // New endpoint for downloading a file to local disk
     @GET
     @Path("/download")
     public Response downloadFile(@QueryParam("bucketName") String bucketName,
@@ -130,8 +180,8 @@ public class FileOperationResourceOc10 {
             }
 
             // Download the file from the specified bucket
-            InputStream fileStream = this.objectStorageUtils.downloadFromObjectStorage(bucketName, fileName);
-            if (fileStream == null) {
+            FileStreamMetadata metadata = this.objectStorageUtils.downloadFromObjectStorage(bucketName, fileName);
+            if (metadata.getInputStream() == null) {
                 return Response.status(Response.Status.NOT_FOUND)
                         .entity("File " + fileName + " not found in bucket " + bucketName)
                         .build();
@@ -148,7 +198,7 @@ public class FileOperationResourceOc10 {
             }
 
             // Write the file to local disk
-            boolean saveSuccessful = this.objectStorageUtils.saveToLocalDisk(fileStream, fullPath);
+            boolean saveSuccessful = this.objectStorageUtils.saveToLocalDisk(metadata.getInputStream(), fullPath);
 
             if (saveSuccessful) {
                 return Response.status(Response.Status.OK)

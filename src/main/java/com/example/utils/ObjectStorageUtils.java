@@ -1,10 +1,14 @@
 package com.example.utils;
 
+import com.example.resources.FileOperationResourceOc10;
+import com.example.resources.FileStreamMetadata;
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
 import com.oracle.bmc.objectstorage.requests.GetObjectRequest;
 import com.oracle.bmc.objectstorage.requests.PutObjectRequest;
 import com.oracle.bmc.objectstorage.responses.GetObjectResponse;
 import com.oracle.bmc.objectstorage.responses.PutObjectResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -12,7 +16,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 public class ObjectStorageUtils {
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(ObjectStorageUtils.class);
     private final String namespaceName;
     private final ObjectStorageClient objectStorageClient;
 
@@ -21,28 +25,28 @@ public class ObjectStorageUtils {
         this.objectStorageClient = objectStorageClient;
     }
     // Helper method to download a file from a specified bucket
-    public InputStream downloadFromObjectStorage(String bucketName, String fileName) {
+    public FileStreamMetadata downloadFromObjectStorage(String bucketName, String fileName) {
         try {
             GetObjectRequest request = GetObjectRequest.builder()
                     .namespaceName(namespaceName)
                     .bucketName(bucketName)
                     .objectName(fileName)
                     .build();
-            System.out.println("File Download starting...");
+            LOGGER.info("File Download starting...");
             long starttime = System.currentTimeMillis();
             GetObjectResponse response = objectStorageClient.getObject(request);
             long timeTaken = System.currentTimeMillis() - starttime;
-            System.out.println("downloadFromObjectStorage: timeTaken (milli):"+timeTaken);
-            System.out.println("downloadFromObjectStorage:File md5:"+response.getContentMd5());
-            return response.getInputStream();
+            LOGGER.info("downloadFromObjectStorage: File Download completed. timeTaken (milli):"+timeTaken);
+            LOGGER.info("downloadFromObjectStorage:File md5:"+response.getContentMd5());
+            return new FileStreamMetadata(response.getInputStream(),response.getContentMd5());
         } catch (Exception e) {
-            System.err.println("Error downloading from OCI Object Storage: " + e.getMessage());
+            LOGGER.error("Error downloading from OCI Object Storage: " + e.getMessage());
             return null;
         }
     }
 
     // Helper method to upload a file to a specified bucket
-    public boolean uploadToObjectStorage(InputStream inputStream, String bucketName, String fileName) {
+    public boolean uploadToObjectStorage(InputStream inputStream, String bucketName, String fileName, String srcMd5) {
         try {
             PutObjectRequest request = PutObjectRequest.builder()
                     .namespaceName(namespaceName)
@@ -51,18 +55,18 @@ public class ObjectStorageUtils {
                     .putObjectBody(inputStream)
                     .build();
 
-            System.out.println("File upload starting...");
-            long starttime = System.currentTimeMillis();
+            LOGGER.info("File upload starting...");
+            long startTime = System.currentTimeMillis();
 
             PutObjectResponse response = objectStorageClient.putObject(request);
-            boolean uploadSuccessful = response.getOpcContentMd5() != null;
-            System.out.println("uploadToObjectStorage: file md5:"+response.getOpcContentMd5());
+            boolean uploadSuccessful = srcMd5 != null? response.getOpcContentMd5().equals(srcMd5) : response.getOpcContentMd5() != null;
+            LOGGER.info("uploadToObjectStorage: file md5:{}", response.getOpcContentMd5());
 
-            long timeTaken = System.currentTimeMillis() - starttime;
-            System.out.println("File upload completed . status: "+uploadSuccessful+" timeTaken(milli):"+timeTaken);
+            long timeTaken = System.currentTimeMillis() - startTime;
+            LOGGER.info("File upload completed . status: {} timeTaken(milli):{}", uploadSuccessful, timeTaken);
             return uploadSuccessful;
         } catch (Exception e) {
-            System.err.println("Error uploading to OCI Object Storage: " + e.getMessage());
+            LOGGER.error("Error uploading to OCI Object Storage: {}", e.getMessage());
             return false;
         }
     }
@@ -77,7 +81,7 @@ public class ObjectStorageUtils {
             }
             return true;
         } catch (IOException e) {
-            System.err.println("Error saving file to local disk: " + e.getMessage());
+            LOGGER.error("Error saving file to local disk: " + e.getMessage());
             return false;
         } finally {
             try {
@@ -85,7 +89,7 @@ public class ObjectStorageUtils {
                     inputStream.close();
                 }
             } catch (IOException e) {
-                System.err.println("Error closing input stream: " + e.getMessage());
+                LOGGER.error("Error closing input stream: " + e.getMessage());
             }
         }
     }
