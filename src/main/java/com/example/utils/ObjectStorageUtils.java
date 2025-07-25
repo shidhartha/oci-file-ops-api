@@ -25,9 +25,11 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ObjectStorageUtils {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectStorageUtils.class);
@@ -153,16 +155,17 @@ public class ObjectStorageUtils {
 
     public MultipartUploadResult uploadParts(InputStream inputStream, String bucketName, String objectName, String uploadId, long fileSize, long partSize) {
         try {
-            List<CommitMultipartUploadPartDetails> parts = new ArrayList<>();
+            ConcurrentHashMap<Integer, CommitMultipartUploadPartDetails> partsMap = new ConcurrentHashMap<>();
             List<byte[]> partMd5Hashes = new ArrayList<>();
             byte[] buffer = new byte[(int) partSize];
             long bytesReadTotal = 0;
-            int partNumber = 1;
+            AtomicInteger partNumber = new AtomicInteger(1);
 
             LOGGER.info("Starting multipart upload for object: {}, partSize: {}", objectName, partSize);
 
             while (bytesReadTotal < fileSize) {
                 int totalBytesReadForPart = 0;
+                int localPartNumber = partNumber.getAndIncrement();
                 // Accumulate data up to partSize or until no more data is available
                 while (totalBytesReadForPart < partSize && bytesReadTotal < fileSize) {
                     int bytesRead = inputStream.read(buffer, totalBytesReadForPart, (int) (partSize - totalBytesReadForPart));
@@ -183,7 +186,7 @@ public class ObjectStorageUtils {
                             .bucketName(bucketName)
                             .objectName(objectName)
                             .uploadId(uploadId)
-                            .uploadPartNum(partNumber)
+                            .uploadPartNum(localPartNumber)
                             .uploadPartBody(partStream)
                             .contentLength((long) totalBytesReadForPart)
                             .build();
@@ -194,22 +197,22 @@ public class ObjectStorageUtils {
                     LOGGER.info("Uploaded part {} for object {}, ETag: {}", partNumber, objectName, response.getETag());
 
                     // Store the ETag and part number for commit
-                    parts.add(CommitMultipartUploadPartDetails.builder()
-                            .partNum(partNumber)
+                    partsMap.put(localPartNumber, CommitMultipartUploadPartDetails.builder()
+                            .partNum(localPartNumber)
                             .etag(response.getETag())
                             .build());
-
-                    partNumber++;
+                    LOGGER.info("partsMap: {}", partsMap);
+//                    partNumber++;
                 } else {
                     break;
                 }
             }
 
-            LOGGER.info("All parts uploaded for object: {}, total parts: {}", objectName, partNumber - 1);
-
+            LOGGER.info("All parts uploaded for object: {}, total parts: {}", objectName, partNumber.get() - 1);
+            LOGGER.info("Finale partsMap: {}", partsMap);
             //calculateLocalyMultipartUploadMd5Hash(partMd5Hashes);
 
-            return new MultipartUploadResult(true, parts);
+            return new MultipartUploadResult(true, new ArrayList<>(partsMap.values()));
         } catch (Exception e) {
             LOGGER.error("Error uploading parts for object: {}, error: {}", objectName, e.getMessage(), e);
             return new MultipartUploadResult(false, new ArrayList<>());
