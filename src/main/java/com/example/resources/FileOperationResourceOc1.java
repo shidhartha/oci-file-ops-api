@@ -140,6 +140,7 @@ public class FileOperationResourceOc1 {
                              @Suspended final AsyncResponse asyncResponse) {
         executorService.submit(() -> {
             try {
+                long startTime = System.currentTimeMillis();
                 if (sourceBucket == null || sourceBucket.isEmpty() ||
                         sourceFile == null || sourceFile.isEmpty() ||
                         destBucket == null || destBucket.isEmpty()) {
@@ -187,8 +188,10 @@ public class FileOperationResourceOc1 {
 
                             // Return the response based on the API call result
                             if (response.getStatus() == 200) {
+                                long timeTaken = System.currentTimeMillis() - startTime;
+                                LOGGER.info("File upload for {} completed . time taken: {} ms", sourceFile, timeTaken);
                                 asyncResponse.resume(Response.status(Response.Status.OK)
-                                        .entity("File " + sourceFile + " uploaded successfully via OC10 API call to bucket " + destBucket + ".")
+                                        .entity("File " + sourceFile + " uploaded successfully via OC10 API call to bucket " + destBucket + ". time taken :"+timeTaken)
                                         .build());
                             } else {
                                 asyncResponse.resume(Response.status(response.getStatus())

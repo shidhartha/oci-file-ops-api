@@ -247,7 +247,7 @@ public class FileOperationResourceOc10 {
                 }
 
                 // Complete multipart upload
-                boolean uploadCompleted = this.objectStorageUtils.completeMultipartUpload(bucketName, objectName, uploadId, uploadResult.getParts(), srcMd5);
+                boolean uploadCompleted = this.objectStorageUtils.completeMultipartUpload(bucketName, objectName, uploadId, uploadResult.getParts(), fileSize);
                 if (uploadCompleted) {
                     asyncResponse.resume(Response.status(Response.Status.OK)
                             .entity("File " + objectName + " uploaded successfully to bucket " + bucketName + " using multipart upload.")

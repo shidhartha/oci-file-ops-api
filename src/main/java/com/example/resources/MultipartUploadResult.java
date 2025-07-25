@@ -9,6 +9,7 @@ public class MultipartUploadResult {
     private final boolean success;
     private final List<CommitMultipartUploadPartDetails> parts;
 
+
     public MultipartUploadResult(boolean success, List<CommitMultipartUploadPartDetails> parts) {
         this.success = success;
         this.parts = parts;
@@ -21,4 +22,5 @@ public class MultipartUploadResult {
     public List<CommitMultipartUploadPartDetails> getParts() {
         return parts;
     }
+
 }

@@ -20,7 +20,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
@@ -149,53 +151,10 @@ public class ObjectStorageUtils {
         }
     }
 
-//    public MultipartUploadResult uploadParts(InputStream inputStream, String bucketName, String objectName, String uploadId, long fileSize, long partSize) {
-//        try {
-//            List<CommitMultipartUploadPartDetails> parts = new ArrayList<>();
-//            byte[] buffer = new byte[(int) partSize];
-//            long bytesReadTotal = 0;
-//            int partNumber = 1;
-//
-//            LOGGER.info("Starting multipart upload for object: {}, partSize: {}", objectName, partSize);
-//
-//            while (bytesReadTotal < fileSize) {
-//                int bytesRead = inputStream.read(buffer);
-//                if (bytesRead == -1) break;
-//
-//                ByteArrayInputStream partStream = new ByteArrayInputStream(buffer, 0, bytesRead);
-//                UploadPartRequest request = UploadPartRequest.builder()
-//                        .namespaceName(namespaceName)
-//                        .bucketName(bucketName)
-//                        .objectName(objectName)
-//                        .uploadId(uploadId)
-//                        .uploadPartNum(partNumber)
-//                        .uploadPartBody(partStream)
-//                        .contentLength((long) bytesRead)
-//                        .build();
-//                LOGGER.info("Uploading part {} for object: {}", partNumber, objectName);
-//                UploadPartResponse response = objectStorageClient.uploadPart(request);
-//
-//                // Store the ETag and part number for commit
-//                parts.add(CommitMultipartUploadPartDetails.builder()
-//                        .partNum(partNumber)
-//                        .etag(response.getETag())
-//                        .build());
-//
-//                bytesReadTotal += bytesRead;
-//                partNumber++;
-//            }
-//
-//            LOGGER.info("All parts uploaded for object: {}, total parts: {}", objectName, partNumber - 1);
-//            return new MultipartUploadResult(true, parts);
-//        } catch (Exception e) {
-//            LOGGER.error("Error uploading parts for object: {}, error: {}", objectName, e.getMessage(), e);
-//            return new MultipartUploadResult(false, new ArrayList<>());
-//        }
-//    }
-
     public MultipartUploadResult uploadParts(InputStream inputStream, String bucketName, String objectName, String uploadId, long fileSize, long partSize) {
         try {
             List<CommitMultipartUploadPartDetails> parts = new ArrayList<>();
+            List<byte[]> partMd5Hashes = new ArrayList<>();
             byte[] buffer = new byte[(int) partSize];
             long bytesReadTotal = 0;
             int partNumber = 1;
@@ -213,6 +172,11 @@ public class ObjectStorageUtils {
                 }
 
                 if (totalBytesReadForPart > 0) {
+                    // Calculate MD5 hash of the part
+                    byte[] md5Hash = calculateMD5(buffer, 0, totalBytesReadForPart);
+//                    LOGGER.info("Calculated MD5 for part {} of object {}: {}", partNumber, objectName, md5Hash);
+                    partMd5Hashes.add(md5Hash);
+
                     ByteArrayInputStream partStream = new ByteArrayInputStream(buffer, 0, totalBytesReadForPart);
                     UploadPartRequest request = UploadPartRequest.builder()
                             .namespaceName(namespaceName)
@@ -227,6 +191,8 @@ public class ObjectStorageUtils {
                     LOGGER.info("Uploading part {} for object: {}, size: {}", partNumber, objectName, totalBytesReadForPart);
                     UploadPartResponse response = objectStorageClient.uploadPart(request);
 
+                    LOGGER.info("Uploaded part {} for object {}, ETag: {}", partNumber, objectName, response.getETag());
+
                     // Store the ETag and part number for commit
                     parts.add(CommitMultipartUploadPartDetails.builder()
                             .partNum(partNumber)
@@ -240,6 +206,9 @@ public class ObjectStorageUtils {
             }
 
             LOGGER.info("All parts uploaded for object: {}, total parts: {}", objectName, partNumber - 1);
+
+            //calculateLocalyMultipartUploadMd5Hash(partMd5Hashes);
+
             return new MultipartUploadResult(true, parts);
         } catch (Exception e) {
             LOGGER.error("Error uploading parts for object: {}, error: {}", objectName, e.getMessage(), e);
@@ -247,7 +216,34 @@ public class ObjectStorageUtils {
         }
     }
 
-    public boolean completeMultipartUpload(String bucketName, String objectName, String uploadId, List<CommitMultipartUploadPartDetails> parts, String srcMd5) {
+    private String calculateLocalyMultipartUploadMd5Hash(List<byte[]> partMd5Hashes) {
+        //compute the final multi-part upload md5
+        int length = partMd5Hashes.stream().mapToInt((md5Hash) -> md5Hash.length).sum();
+        byte[] allMd5Hashes = new byte[length];
+        int position = 0;
+        for (byte[] md5Hash : partMd5Hashes) {
+            System.arraycopy(md5Hash, 0, allMd5Hashes, position, md5Hash.length);
+            position += md5Hash.length;
+        }
+        byte[] digest = calculateMD5(allMd5Hashes, 0, allMd5Hashes.length);
+        String multipartMd5Hash = Base64.getEncoder().encodeToString(digest);
+        LOGGER.info("Calculated multipart md5Hash: {}", multipartMd5Hash);
+        return multipartMd5Hash;
+    }
+
+    // Method to calculate MD5 hash of a byte array segment
+    private byte[] calculateMD5(byte[] data, int offset, int length) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.update(data, offset, length);
+            byte[] digest = md.digest();
+            return Base64.getEncoder().encode(digest);
+        } catch (Exception e) {
+            LOGGER.error("Error calculating MD5 hash: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+    public boolean completeMultipartUpload(String bucketName, String objectName, String uploadId, List<CommitMultipartUploadPartDetails> parts, long fileSize) {
         try {
             // Build the commit details with the list of parts
             CommitMultipartUploadDetails details = CommitMultipartUploadDetails.builder()
@@ -264,21 +260,20 @@ public class ObjectStorageUtils {
 
             LOGGER.info("Completing multipart upload for object: {}", objectName);
             CommitMultipartUploadResponse multipartUploadResponse = objectStorageClient.commitMultipartUpload(request);
-            LOGGER.info("Multipart upload completed for object: {}, srcMd5: {} and dstMd5 Hash:{}", objectName, srcMd5,multipartUploadResponse.getOpcMultipartMd5());
 
-            GetObjectResponse response = objectStorageClient.getObject(
-                            GetObjectRequest.builder()
-                                    .namespaceName(namespaceName)
-                                    .bucketName(bucketName)
-                                    .objectName(objectName)
-                                    .build());
-            LOGGER.info("Get object completed for object: {}, srcMd5: {} and dstMd5(Get) Hash:{}", objectName, srcMd5,response.getOpcMultipartMd5());
+            GetObjectResponse getObjectResponse = objectStorageClient.getObject(
+                    GetObjectRequest.builder()
+                            .namespaceName(namespaceName)
+                            .bucketName(bucketName)
+                            .objectName(objectName)
+                            .build());
+            LOGGER.info("Multipart upload completed for object. Get object completed for object: {}, sourceSize: {} and destination size:{}", objectName, fileSize,getObjectResponse.getContentLength());
 
 
-            if (srcMd5 != null) {
-                return srcMd5.equals(multipartUploadResponse.getOpcMultipartMd5());
+            if (fileSize > 0) {
+                return fileSize == getObjectResponse.getContentLength();
             } else {
-                return multipartUploadResponse.getOpcMultipartMd5() != null;
+                return getObjectResponse.getContentLength() > 0;
             }
 
         } catch (Exception e) {
