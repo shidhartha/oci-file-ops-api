@@ -5,6 +5,7 @@ import com.oracle.bmc.auth.AuthenticationDetailsProvider;
 import com.oracle.bmc.auth.ConfigFileAuthenticationDetailsProvider;
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
 import org.glassfish.jersey.client.ClientConfig;
+import org.glassfish.jersey.client.JerseyWebTarget;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.FormDataParam;
@@ -138,6 +139,7 @@ public class FileOperationResourceOc1 {
                              @QueryParam("destBucket") String destBucket,
                              @QueryParam("destFile") String destFile,
                              @Suspended final AsyncResponse asyncResponse) {
+        int partSize = 104857600;
         executorService.submit(() -> {
             try {
                 long startTime = System.currentTimeMillis();
@@ -165,15 +167,21 @@ public class FileOperationResourceOc1 {
                 Client client = ClientBuilder.newClient(config);
 
                 // Target the existing upload endpoint
-//                WebTarget target = client.target("http://localhost:8080/oc10/uploadFile")
-//                        .queryParam("bucketName", destBucket)
-//                        .queryParam("objectName", destinationFileName)
-//                        .queryParam("md5", metadata.getMd5Hash());
-                WebTarget target = client.target("http://localhost:8080/oc10/uploadFileMultipart")
-                        .queryParam("bucketName", destBucket)
-                        .queryParam("objectName", destinationFileName)
-                        .queryParam("size", metadata.getSize())
-                        .queryParam("md5", metadata.getMd5Hash());
+
+                WebTarget target = null;
+                if (metadata.getSize() <= partSize){
+                    target = client.target("http://localhost:8080/oc10/uploadFile")
+                            .queryParam("bucketName", destBucket)
+                            .queryParam("objectName", destinationFileName)
+                            .queryParam("md5", metadata.getMd5Hash());
+                } else {
+                    target = client.target("http://localhost:8080/oc10/uploadFileMultipart")
+                            .queryParam("bucketName", destBucket)
+                            .queryParam("objectName", destinationFileName)
+                            .queryParam("size", metadata.getSize())
+                            .queryParam("md5", metadata.getMd5Hash());
+                }
+
 
                 try (InputStream in = metadata.getInputStream()) {
                     // Create multipart form data
