@@ -4,3 +4,7 @@ target/
 .vscode/
 *.log
 downloads/
+.classpath
+.oca/
+.project
+.settings/
