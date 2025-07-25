@@ -74,6 +74,28 @@
       <version>1.18.30</version>
       <scope>provided</scope>
     </dependency>
+    <!-- Dropwizard Metrics -->
+    <dependency>
+      <groupId>io.dropwizard.metrics</groupId>
+      <artifactId>metrics-core</artifactId>
+      <version>4.2.33</version> <!-- Use the latest version -->
+    </dependency>
+    <!-- Prometheus Metrics Exporter for Dropwizard -->
+    <dependency>
+      <groupId>io.prometheus</groupId>
+      <artifactId>simpleclient_dropwizard</artifactId>
+      <version>0.16.0</version> <!-- Use the latest version -->
+    </dependency>
+    <dependency>
+      <groupId>io.prometheus</groupId>
+      <artifactId>simpleclient_servlet</artifactId>
+      <version>0.16.0</version> <!-- Use the latest version -->
+    </dependency>
+<!--    <dependency>-->
+<!--      <groupId>ru.vyarus</groupId>-->
+<!--      <artifactId>dropwizard-guicey</artifactId>-->
+<!--      <version>7.2.2</version> &lt;!&ndash; Check for the latest version on Maven Central &ndash;&gt;-->
+<!--    </dependency>-->
   </dependencies>
 
   <build>

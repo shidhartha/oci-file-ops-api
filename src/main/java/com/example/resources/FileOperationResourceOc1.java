@@ -164,35 +164,43 @@ public class FileOperationResourceOc1 {
                 Client client = ClientBuilder.newClient(config);
 
                 // Target the existing upload endpoint
-                WebTarget target = client.target("http://localhost:8080/oc10/uploadFile")
+//                WebTarget target = client.target("http://localhost:8080/oc10/uploadFile")
+//                        .queryParam("bucketName", destBucket)
+//                        .queryParam("objectName", destinationFileName)
+//                        .queryParam("md5", metadata.getMd5Hash());
+                WebTarget target = client.target("http://localhost:8080/oc10/uploadFileMultipart")
                         .queryParam("bucketName", destBucket)
-                        .queryParam("objectName", destinationFileName);
+                        .queryParam("objectName", destinationFileName)
+                        .queryParam("size", metadata.getSize())
+                        .queryParam("md5", metadata.getMd5Hash());
 
-                // Create multipart form data
-                try (FormDataMultiPart formDataMultiPart = new FormDataMultiPart()) {
-                    StreamDataBodyPart filePart = new StreamDataBodyPart("file", metadata.getInputStream(), sourceFile);
-                    formDataMultiPart.bodyPart(filePart);
+                try (InputStream in = metadata.getInputStream()) {
+                    // Create multipart form data
+                    try (FormDataMultiPart formDataMultiPart = new FormDataMultiPart()) {
+                        StreamDataBodyPart filePart = new StreamDataBodyPart("file", in, sourceFile);
+                        formDataMultiPart.bodyPart(filePart);
 
-                    // Send the request to the existing endpoint
-                    LOGGER.info("Calling OC10 Api to upload the file");
-                    try (Response response = target.request(MediaType.APPLICATION_JSON)
-                            .post(Entity.entity(formDataMultiPart, MediaType.MULTIPART_FORM_DATA))) {
+                        // Send the request to the existing endpoint
+                        LOGGER.info("Calling OC10 Api to upload the file");
+                        try (Response response = target.request(MediaType.APPLICATION_JSON)
+                                .post(Entity.entity(formDataMultiPart, MediaType.MULTIPART_FORM_DATA))) {
 
-                        // Return the response based on the API call result
-                        if (response.getStatus() == 200) {
-                            asyncResponse.resume(Response.status(Response.Status.OK)
-                                    .entity("File " + sourceFile + " uploaded successfully via OC10 API call to bucket " + destBucket + ".")
-                                    .build());
-                        } else {
-                            asyncResponse.resume(Response.status(response.getStatus())
-                                    .entity("Failed to upload via OC10 API call: " + response.readEntity(String.class))
-                                    .build());
+                            // Return the response based on the API call result
+                            if (response.getStatus() == 200) {
+                                asyncResponse.resume(Response.status(Response.Status.OK)
+                                        .entity("File " + sourceFile + " uploaded successfully via OC10 API call to bucket " + destBucket + ".")
+                                        .build());
+                            } else {
+                                asyncResponse.resume(Response.status(response.getStatus())
+                                        .entity("Failed to upload via OC10 API call: " + response.readEntity(String.class))
+                                        .build());
+                            }
                         }
+                    } catch (Exception e) {
+                        asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                                .entity("Error uploading file via OC10 API call: " + e.getMessage())
+                                .build());
                     }
-                } catch (Exception e) {
-                    asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                            .entity("Error uploading file via OC10 API call: " + e.getMessage())
-                            .build());
                 }
             } catch (Exception e) {
                 asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)

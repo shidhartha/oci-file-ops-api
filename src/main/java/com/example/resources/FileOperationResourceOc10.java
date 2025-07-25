@@ -133,11 +133,12 @@ public class FileOperationResourceOc10 {
             @FormDataParam("file") InputStream fileInputStream,
             @QueryParam("bucketName") String bucketName,
             @QueryParam("objectName") String objectName,
+            @QueryParam("md5") String srcMd5,
             @Suspended AsyncResponse asyncResponse) {
         executorService.submit(() -> {
-            try {
+            try(InputStream fis = fileInputStream) {
                 // Validate input parameters
-                if (fileInputStream == null) {
+                if (fis == null) {
                     asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
                             .entity("File input stream is required.")
                             .build());
@@ -153,10 +154,11 @@ public class FileOperationResourceOc10 {
                             .entity("File name or object name is required.")
                             .build());
                 }
+
                 String newObjectName = objectName+"_"+new java.util.Date().getTime();
 
                 // Upload the file to OCI Object Storage
-                boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(fileInputStream, bucketName, newObjectName, null);
+                boolean uploadSuccessful = this.objectStorageUtils.uploadToObjectStorage(fis, bucketName, newObjectName, srcMd5);
 
                 if (uploadSuccessful) {
                     asyncResponse.resume(Response.status(Response.Status.OK)
@@ -175,8 +177,96 @@ public class FileOperationResourceOc10 {
         });
     }
 
+    @POST
+    @Path("/uploadFileMultipart")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public void uploadFileMultipart(
+            @FormDataParam("file") InputStream uploadedInputStream,
+            @FormDataParam("file") FormDataContentDisposition fileDetail,
+            @QueryParam("bucketName") String bucketName,
+            @QueryParam("objectName") String objName,
+            @QueryParam("md5") String srcMd5,
+            @QueryParam("size") @DefaultValue("-1")long size,
+            @QueryParam("partSize") @DefaultValue("104857600") long partSize, // Default to 100MB per part
+            @Suspended AsyncResponse asyncResponse) {
+        executorService.submit(() -> {
+            try {
+                LOGGER.info("uploadFileMultipart started");
+                String fileName = fileDetail.getFileName();
+                long fileSize = fileDetail.getSize() > 0L ? fileDetail.getSize() : size;
 
-            // New endpoint for downloading a file to local disk
+                if (fileSize <= 0L){
+                    asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                            .entity("Invalid file size.")
+                            .build());
+                    return;
+                }
+
+                if (fileName == null || fileName.isEmpty()) {
+                    asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                            .entity("File name is required.")
+                            .build());
+                    return;
+                }
+                if (bucketName == null || bucketName.isEmpty()) {
+                    asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                            .entity("Bucket name is required.")
+                            .build());
+                    return;
+                }
+                String checkedObjName = objName == null? fileName:objName;
+
+                if (partSize < 10 * 1024 * 1024) { // Minimum part size for OCI is typically 10MB
+                    asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                            .entity("Part size must be at least 10MB.")
+                            .build());
+                    return;
+                }
+
+                // Add a timestamp to the object name to ensure uniqueness
+                String objectName = checkedObjName + "_" + new java.util.Date().getTime();
+
+                // Initiate multipart upload
+                String uploadId = this.objectStorageUtils.initiateMultipartUpload(bucketName, objectName);
+                if (uploadId == null) {
+                    asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity("Failed to initiate multipart upload.")
+                            .build());
+                    return;
+                }
+
+                // Upload parts
+                MultipartUploadResult uploadResult = this.objectStorageUtils.uploadParts(uploadedInputStream, bucketName, objectName, uploadId, fileSize, partSize);
+
+                if (!uploadResult.isSuccess()) {
+                    this.objectStorageUtils.abortMultipartUpload(bucketName, objectName, uploadId);
+                    asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity("Failed to upload all parts.")
+                            .build());
+                    return;
+                }
+
+                // Complete multipart upload
+                boolean uploadCompleted = this.objectStorageUtils.completeMultipartUpload(bucketName, objectName, uploadId, uploadResult.getParts(), srcMd5);
+                if (uploadCompleted) {
+                    asyncResponse.resume(Response.status(Response.Status.OK)
+                            .entity("File " + objectName + " uploaded successfully to bucket " + bucketName + " using multipart upload.")
+                            .build());
+                } else {
+                    this.objectStorageUtils.abortMultipartUpload(bucketName, objectName, uploadId);
+                    asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity("Failed to complete multipart upload.")
+                            .build());
+                }
+            } catch (Exception e) {
+                asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity("Error during multipart upload: " + e.getMessage())
+                        .build());
+            }
+        });
+    }
+
+                // New endpoint for downloading a file to local disk
     @GET
     @Path("/download")
     public Response downloadFile(@QueryParam("bucketName") String bucketName,

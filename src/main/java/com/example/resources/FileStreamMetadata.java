@@ -12,4 +12,5 @@ import java.io.InputStream;
 public class FileStreamMetadata {
     private final InputStream inputStream;
     private final String md5Hash;
+    private final long size;
 }
