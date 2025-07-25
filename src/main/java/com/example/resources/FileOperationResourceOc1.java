@@ -32,7 +32,7 @@ public class FileOperationResourceOc1 {
     private final ObjectStorageUtils objectStorageUtils;
 
     // ExecutorService for async processing
-    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
+    private final ExecutorService executorService = Executors.newCachedThreadPool();
 
 
     public FileOperationResourceOc1() {
@@ -139,7 +139,7 @@ public class FileOperationResourceOc1 {
                              @QueryParam("destBucket") String destBucket,
                              @QueryParam("destFile") String destFile,
                              @Suspended final AsyncResponse asyncResponse) {
-        int partSize = 104857600;
+        int partSize = 104857600; // 100 MB
         executorService.submit(() -> {
             try {
                 long startTime = System.currentTimeMillis();
@@ -179,6 +179,7 @@ public class FileOperationResourceOc1 {
                             .queryParam("bucketName", destBucket)
                             .queryParam("objectName", destinationFileName)
                             .queryParam("size", metadata.getSize())
+                            .queryParam("partSize", partSize)
                             .queryParam("md5", metadata.getMd5Hash());
                 }
 
@@ -190,7 +191,7 @@ public class FileOperationResourceOc1 {
                         formDataMultiPart.bodyPart(filePart);
 
                         // Send the request to the existing endpoint
-                        LOGGER.info("Calling OC10 Api to upload the file");
+                        LOGGER.info("Calling OC10 Api to upload the file: {}", sourceFile);
                         try (Response response = target.request(MediaType.APPLICATION_JSON)
                                 .post(Entity.entity(formDataMultiPart, MediaType.MULTIPART_FORM_DATA))) {
 

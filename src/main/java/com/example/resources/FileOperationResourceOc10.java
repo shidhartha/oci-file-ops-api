@@ -23,10 +23,10 @@ import java.util.concurrent.Executors;
 @Produces(MediaType.APPLICATION_JSON)
 public class FileOperationResourceOc10 {
     private static final Logger LOGGER = LoggerFactory.getLogger(FileOperationResourceOc10.class);
-    private ObjectStorageUtils objectStorageUtils;
+    private final ObjectStorageUtils objectStorageUtils;
 
     // ExecutorService for async processing
-    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
+    private final ExecutorService executorService = Executors.newCachedThreadPool();
 
 
     public FileOperationResourceOc10() {
